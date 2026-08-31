@@ -37,7 +37,7 @@ def start_cmd(message):
     
     bot.send_message(
         message.chat.id, 
-        "🌐 Пожалуйста, выберите ваш язык интерфейса:\nPlease choose your interface language:", 
+        "🌐 Пожалуйста, выберите ваш язык接口 интерфейса:\nPlease choose your interface language:", 
         reply_markup=markup
     )
 
@@ -79,20 +79,20 @@ def call_cmd(message):
     user_lang = users_db.get(user_id, {}).get('lang', 'ru')
     
     # Генерируем случайный уникальный ID комнаты для звонка
-    room_id = f"polycall_{user_id}_{random.randint(1000, 9999)}"
+    room_id = f"polycall_{user_id}_{random.randint(10000, 99999)}"
     call_url = f"https://jit.si{room_id}"
     
-    # Формируем тексты со ссылками на разных языках
+    # Формируем тексты со ссылками и инструкциями по ИИ-переводу
     if user_lang == 'en':
-        text = f"📞 *Your secure AI-translated call link is ready!*\n\n1. Tap the link below to enter the room.\n2. Send this link to your friend (they can open it in WhatsApp, SMS, or any browser).\n\n🔗 *Join call:* {call_url}"
+        text = f"📞 *Your secure link is ready!*\n\n1. Tap the link below to enter the room.\n2. Send it to your friend.\n\n🔗 *Join call:* {call_url}\n\n🤖 *Need AI Translation?* Inside the call, tap three dots (...) ➡️ *Start Subtitles* ➡️ choose languages and check *Translation*."
     elif user_lang == 'es':
-        text = f"📞 *¡Su enlace de llamada segura traducida por IA está listo!*\n\n1. Toque el enlace de abajo para entrar.\n2. Envíe este enlace a su amigo (puede abrirlo en WhatsApp, SMS o cualquier navegador).\n\n🔗 *Unirse a la llamada:* {call_url}"
+        text = f"📞 *¡Su enlace seguro está listo!*\n\n1. Toque el enlace de abajo para entrar.\n2. Envíalo a tu amigo.\n\n🔗 *Unirse:* {call_url}\n\n🤖 *¿Necesitas traducción IA?* Dentro de la llamada, toca tres puntos (...) ➡️ *Start Subtitles* ➡️ elige idiomas y marca *Translation*."
     elif user_lang == 'zh':
-        text = f"📞 *您的加密人工智能翻译通话链接已准备 code 就绪！*\n\n1. 点击下方链接进入房间。\n2. 将此链接发送给您的朋友（他们可以在 WhatsApp、短信或任何浏览器中打开）。\n\n🔗 *加入通话:* {call_url}"
+        text = f"📞 *您的安全通话链接已就绪！*\n\n1. 点击下方链接进入房间。\n2. 发送给您的朋友。\n\n🔗 *加入通话:* {call_url}\n\n🤖 *需要人工智能翻译吗？* 在通话中，点击三个点 (...) ➡️ *Start Subtitles* ➡️ 选择语言并勾选 *Translation*。"
     else: # По умолчанию Русский
-        text = f"📞 *Ваша защищенная ссылка на ИИ-звонок готова!*\n\n1. Нажмите на ссылку ниже, чтобы войти в комнату звонка.\n2. Отправьте эту ссылку собеседнику (он может открыть её в WhatsApp, СМС или любом браузере на телефоне).\n\n🔗 *Войти в звонок:* {call_url}"
+        text = f"📞 *Ваша защищенная ссылка готова!*\n\n1. Нажмите на ссылку ниже, чтобы войти в комнату.\n2. Отправьте её собеседнику в любой мессенджер.\n\n🔗 *Войти в звонок:* {call_url}\n\n🤖 *Нужен ИИ-перевод?* Внутри звонка нажмите на три точки (...) ➡️ *Start Subtitles* (Включить субтитры) ➡️ выберите языки разговора и поставьте галочку *Translation*."
         
-    bot.send_message(message.chat.id, text, parse_mode="Markdown", disable_web_page_preview=False)
+    bot.send_message(message.chat.id, text, parse_mode="Markdown", disable_web_page_preview=True)
 
 @bot.message_handler(commands=['admin'])
 def admin_cmd(message):
