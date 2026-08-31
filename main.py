@@ -86,7 +86,22 @@ def admin_stats(message):
 def admin_broadcast(message):
     bot.send_message(message.chat.id, "📝 Напишите текст рекламного сообщения или вставьте реферальную ссылку, которую хотите разослать всем подписчикам:")
 
+import threading
+from flask import Flask
+
+app = Flask('')
+
+@app.route('/')
+def home():
+    return "Бот работает!"
+
+def run_port():
+    app.run(host='0.0.0.0', port=os.environ.get('PORT', 80))
+
 if __name__ == '__main__':
+    # Запуск порта для обхода ошибки Render
+    threading.Thread(target=run_port).start()
     print("Бот PolyCall успешно запущен...")
     bot.infinity_polling()
+
 
