@@ -1,7 +1,21 @@
 import os
+import threading
 import telebot
 from telebot import types
+from flask import Flask
 
+# Настройка фальшивого веб-порта для обхода ошибки Render
+app = Flask('')
+
+@app.route('/')
+def home():
+    return "PolyCall бот успешно запущен и работает вечно!"
+
+def run_port():
+    port = int(os.environ.get('PORT', 80))
+    app.run(host='0.0.0.0', port=port)
+
+# Настройка самого Telegram-бота
 TOKEN = os.environ.get('BOT_TOKEN')
 bot = telebot.TeleBot(TOKEN)
 
@@ -86,22 +100,9 @@ def admin_stats(message):
 def admin_broadcast(message):
     bot.send_message(message.chat.id, "📝 Напишите текст рекламного сообщения или вставьте реферальную ссылку, которую хотите разослать всем подписчикам:")
 
-import threading
-from flask import Flask
-
-app = Flask('')
-
-@app.route('/')
-def home():
-    return "Бот работает!"
-
-def run_port():
-    app.run(host='0.0.0.0', port=os.environ.get('PORT', 80))
-
 if __name__ == '__main__':
-    # Запуск порта для обхода ошибки Render
+    # Сначала запускаем веб-сервер для Render
     threading.Thread(target=run_port).start()
     print("Бот PolyCall успешно запущен...")
+    # Затем запускаем самого Telegram бота
     bot.infinity_polling()
-
-
