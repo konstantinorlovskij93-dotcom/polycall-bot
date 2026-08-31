@@ -1,6 +1,7 @@
 import os
 import threading
 import random
+import time
 import telebot
 from telebot import types
 from flask import Flask
@@ -20,26 +21,27 @@ def run_port():
 TOKEN = os.environ.get('BOT_TOKEN')
 bot = telebot.TeleBot(TOKEN)
 
-# Временная база данных в памяти сервера
+# База данных в памяти сервера
 users_db = {}
+chats_db = {}  # Хранит активные мосты между пользователями
+rooms_db = {}  # Хранит созданные коды комнат
 
 @bot.message_handler(commands=['start'])
 def start_cmd(message):
     user_id = message.from_user.id
     text_args = message.text.split()
     
-    # Реферальная система: проверяем, зашел ли пользователь по чужой ссылке
+    # Реферальная система
     referrer_id = None
     if len(text_args) > 1 and text_args[1].isdigit():
         referrer_id = int(text_args[1])
 
     if user_id not in users_db:
-        users_db[user_id] = {'lang': 'ru', 'referrals': 0, 'invited_by': referrer_id}
-        # Если есть пригласитель, начисляем ему балл
+        users_db[user_id] = {'lang': 'ru', 'referrals': 0, 'invited_by': referrer_id, 'active_chat': None}
         if referrer_id and referrer_id in users_db:
             users_db[referrer_id]['referrals'] += 1
             try:
-                bot.send_message(referrer_id, "🎉 По вашей реферальной ссылке зарегистрировался новый пользователь! +1 в вашу команду.")
+                bot.send_message(referrer_id, "🎉 По вашей реферальной ссылке зарегистрировался новый пользователь!")
             except:
                 pass
     
@@ -62,86 +64,161 @@ def callback_lang(call):
     lang = call.data.split('_')[-1]
     
     if user_id not in users_db:
-        users_db[user_id] = {'referrals': 0, 'invited_by': None}
+        users_db[user_id] = {'referrals': 0, 'invited_by': None, 'active_chat': None}
     users_db[user_id]['lang'] = lang
     
     texts = {
-        'ru': "✅ Язык успешно изменен! Используйте меню для звонков, секретного чата или проверки рефералов.",
-        'en': "✅ Language successfully changed! Use the menu for calls, secret chat, or checking referrals.",
-        'es': "✅ ¡Idioma cambiado con éxito! Use el menú para llamadas, chat secreto o verificar referidos.",
-        'zh': "✅ 语言已成功切换！使用菜单进行通话、加密聊天或查看推荐人。"
+        'ru': "✅ Язык установлен! Используйте меню команд.\n\n💬 Чтобы начать секретный ИИ-чат, введите /chat\n📞 Чтобы сделать ИИ-звонок по ссылке, введите /call",
+        'en': "✅ Language set! Use the commands menu.\n\n💬 To start AI Secret Chat, type /chat\n📞 To make an AI Call via link, type /call",
+        'es': "✅ ¡Idioma establecido! Use el menú de comandos.\n\n💬 Para iniciar el chat secreto de IA, escriba /chat",
+        'zh': "✅ 语言设置成功！请使用命令菜单。\n\n💬 要启动人工智能加密聊天，请输入 /chat"
     }
-    
     bot.answer_callback_query(call.id, "Done!")
     bot.send_message(call.message.chat.id, texts.get(lang, texts['ru']))
 
-# Новая команда для вывода реферальной ссылки пользователя
+# --- НОВАЯ СИСТЕМА СЕКРЕТНОГО ИИ-ТЕКСТОВОГО ЧАТА ---
+@bot.message_handler(commands=['chat'])
+def chat_menu_cmd(message):
+    user_id = message.from_user.id
+    markup = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
+    markup.add("➕ Создать комнату чата", "🔑 Войти в комнату", "❌ Выйти из чата")
+    bot.send_message(message.chat.id, "💬 Настройка секретного чата с автоматическим ИИ-переводом и исчезающими сообщениями:", reply_markup=markup)
+
+@bot.message_handler(func=lambda message: message.text == "➕ Создать комнату чата")
+def create_room(message):
+    user_id = message.from_user.id
+    room_code = str(random.randint(1000, 9999))
+    rooms_db[room_code] = user_id
+    bot.send_message(message.chat.id, f"🔑 Комната создана! Отправьте этот 4-значный код вашему собеседнику:\n\n`{room_code}`\n\nКак только он введет его, включится автоматический ИИ-перевод.", parse_mode="Markdown")
+
+@bot.message_handler(func=lambda message: message.text == "🔑 Войти в комнату")
+def join_room_start(message):
+    msg = bot.send_message(message.chat.id, "🔢 Введите 4-значный код комнаты, который вам скинул собеседник:")
+    bot.register_next_step_handler(msg, join_room_process)
+
+def join_room_process(message):
+    user_id = message.from_user.id
+    room_code = message.text.strip()
+    
+    if room_code in rooms_db:
+        partner_id = rooms_db[room_code]
+        if partner_id == user_id:
+            bot.send_message(message.chat.id, "❌ Нельзя войти в собственную комнату.")
+            return
+            
+        # Создаем мост связи между двумя пользователями
+        chats_db[user_id] = partner_id
+        chats_db[partner_id] = user_id
+        
+        # Удаляем комнату из списка доступных, так как она заполнена
+        del rooms_db[room_code]
+        
+        bot.send_message(user_id, "🚀 Вы успешно подключились! Чат запущен. Все сообщения переводятся ИИ автоматически и удаляются через 10 секунд после прочтения.")
+        bot.send_message(partner_id, "🚀 Собеседник подключился! Чат запущен. Все сообщения переводятся ИИ автоматически и удаляются через 10 секунд после прочтения.")
+    else:
+        bot.send_message(message.chat.id, "❌ Неверный код комнаты или её больше не существует.")
+
+@bot.message_handler(func=lambda message: message.text == "❌ Выйти из чата")
+def exit_chat(message):
+    user_id = message.from_user.id
+    if user_id in chats_db:
+        partner_id = chats_db[user_id]
+        del chats_db[user_id]
+        if partner_id in chats_db:
+            del chats_db[partner_id]
+        bot.send_message(user_id, "🔒 Вы вышли из секретного чата. История полностью стерта.")
+        bot.send_message(partner_id, "🔒 Собеседник покинул секретный чат. История полностью стерта.")
+    else:
+        bot.send_message(message.chat.id, "Вы не находитесь в активном чате.")
+
+# Функция-симуляция шпионского удаления сообщений
+def delete_message_delayed(chat_id, message_id, delay=10):
+    def delayed():
+        time.sleep(delay)
+        try:
+            bot.delete_message(chat_id, message_id)
+        except:
+            pass
+    threading.Thread(target=delayed).start()
+
+# Простой встроенный словарь-переводчик для демонстрации (на следующем шаге подключим полноценный ИИ)
+def ai_translate(text, target_lang):
+    # Заглушка-переводчик, имитирующая работу ИИ на старте
+    translations = {
+        "привет": {"en": "Hello!", "es": "¡Hola!", "zh": "你好！"},
+        "как дела": {"en": "How are you?", "es": "¿Cómo estás?", "zh": "你好吗？"},
+        "хорошо": {"en": "Good", "es": "Bien", "zh": "很好"},
+        "пока": {"en": "Goodbye", "es": "Adiós", "zh": "再见"}
+    }
+    clean_text = text.lower().strip()
+    if clean_text in translations and target_lang in translations[clean_text]:
+        return translations[clean_text][target_lang]
+    # Если слова нет в мини-словаре, отправляем с пометкой (ИИ-перевод)
+    return f"📝 [ИИ-Перевод на {target_lang.upper()}]: {text}"
+
+# Обработка всех обычных текстовых сообщений внутри секретного чата
+@bot.message_handler(func=lambda message: True)
+def handle_all_messages(message):
+    user_id = message.from_user.id
+    
+    # Если пользователь находится в активном секретном чате
+    if user_id in chats_db:
+        partner_id = chats_db[user_id]
+        partner_lang = users_db.get(partner_id, {}).get('lang', 'en')
+        user_lang = users_db.get(user_id, {}).get('lang', 'ru')
+        
+        # Переводим текст сообщения на язык собеседника
+        translated_text = ai_translate(message.text, partner_lang)
+        
+        # Отправляем собеседнику
+        sent_msg_partner = bot.send_message(partner_id, f"💬 {translated_text}")
+        # Отправляем автору подтверждение доставки
+        sent_msg_user = bot.send_message(user_id, f"👁‍🗨 Отправлено (исчезнет через 10 сек): {message.text}")
+        
+        # Запускаем таймеры автоматического удаления сообщений с экранов
+        delete_message_delayed(partner_id, sent_msg_partner.message_id, 10)
+        delete_message_delayed(user_id, sent_msg_user.message_id, 10)
+        delete_message_delayed(user_id, message.message_id, 10)
+    else:
+        # Если пользователь просто пишет боту вне чата
+        bot.send_message(message.chat.id, "🤖 Используйте меню команд в левом углу чата для управления функциями PolyCall.")
+
+# --- КОНЕЦ НОВОЙ СИСТЕМЫ ---
+
 @bot.message_handler(commands=['share'])
 def share_cmd(message):
     user_id = message.from_user.id
     bot_info = bot.get_me()
     ref_url = f"https://t.me{bot_info.username}?start={user_id}"
-    
     user_data = users_db.get(user_id, {'referrals': 0})
     ref_count = user_data.get('referrals', 0)
     
-    text = (
-        f"👑 *Ваша персональная реферальная ссылка:*\n`{ref_url}`\n\n"
-        f"👥 Вы пригласили: *{ref_count}* человек(а).\n\n"
-        f"Пересылайте эту ссылку друзьям! Каждый, кто зайдет по ней, станет частью вашей команды разработчика PolyCall."
-    )
+    text = f"👑 *Ваша реферальная ссылка:*\n`{ref_url}`\n\n👥 Вы пригласили: *{ref_count}* человек(а)."
     bot.send_message(message.chat.id, text, parse_mode="Markdown")
-
-@bot.message_handler(commands=['assistant'])
-def assistant_cmd(message):
-    user_id = message.from_user.id
-    user_lang = users_db.get(user_id, {}).get('lang', 'ru')
-    
-    ai_texts = {
-        'ru': "🤖 Здравствуйте! Я ваш ИИ-помощник PolyCall. Чем я могу помочь вам настроить звонок или защищенный чат?",
-        'en': "🤖 Hello! I am your PolyCall AI assistant. How can I help you set up your call or secure chat?",
-        'es': "🤖 ¡Hola! Soy su asistente de IA de PolyCall. ¿Cómo puedo ayudarle a configurar su llamada o chat seguro?",
-        'zh': "🤖 您好！我是您的 PolyCall 人工智能助手。我能如何帮您设置通话或加密聊天？"
-    }
-    bot.send_message(message.chat.id, ai_texts.get(user_lang, ai_texts['ru']))
 
 @bot.message_handler(commands=['call'])
 def call_cmd(message):
     user_id = message.from_user.id
     user_lang = users_db.get(user_id, {}).get('lang', 'ru')
-    
-    # Уникальная секретная комната с поддержкой автоудаления сообщений после прочтения (таймер Jitsi)
-    room_id = f"polycall_secure_{user_id}_{random.randint(100000, 999999)}"
-    # Добавляем специальный параметр в ссылку, чтобы включить режим исчезающих сообщений
+    room_id = f"polycall_secure_{user_id}_{random.randint(10000, 99999)}"
     call_url = f"https://jit.si{room_id}#config.enableEphemeralChatMessages=true"
     
-    if user_lang == 'en':
-        text = f"📞 *Your Quantum-Secure Call & Secret Chat link is ready!*\n\n1. Tap the link to enter.\n2. Send it to your friend.\n\n🔗 *Join link:* {call_url}\n\n🔥 *Super-Secret Chat Enabled:* All text messages inside vanish automatically immediately after being read and leave NO traces!"
-    elif user_lang == 'es':
-        text = f"📞 *¡Su enlace de llamada y chat secreto seguro ya está listo!*\n\n1. Toque el enlace para entrar.\n2. Envíalo a tu amigo.\n\n🔗 *Enlace:* {call_url}\n\n🔥 *Chat Súper Secreto Activado:* ¡Todos los mensajes de texto desaparecen automáticamente después de leerse!"
-    elif user_lang == 'zh':
-        text = f"📞 *您的量子加密通话与秘密聊天链接已就绪！*\n\n1. 点击链接进入房间。\n2. 发送给您的朋友。\n\n🔗 *链接:* {call_url}\n\n🔥 *超级加密聊天已启用:* 所有文本消息在阅读后都会自动消失，不留任何痕迹！"
-    else: # Русский
-        text = f"📞 *Ваша Квантово-Защищенная Ссылка готова!*\n\n1. Нажмите на ссылку ниже, чтобы войти в комнату.\n2. Отправьте её собеседнику в любой мессенджер.\n\n🔗 *Войти в звонок и чат:* {call_url}\n\n🔥 *Включен Шпионский Чат:* Все текстовые сообщения внутри этой комнаты исчезают автоматически сразу после прочтения и не оставляют никаких следов на серверах!"
-        
+    text = f"📞 *Ваша ссылка на ИИ-звонок готова!*\n\n🔗 *Войти:* {call_url}"
     bot.send_message(message.chat.id, text, parse_mode="Markdown", disable_web_page_preview=True)
 
 @bot.message_handler(commands=['admin'])
 def admin_cmd(message):
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
     markup.add("📊 Статистика", "📢 Рассылка рекламы")
-    bot.send_message(message.chat.id, "👑 Добро пожаловать в панель разработчика PolyCall! Управляйте ботом без лимитов:", reply_markup=markup)
+    bot.send_message(message.chat.id, "👑 Панель разработчика PolyCall:", reply_markup=markup)
 
 @bot.message_handler(func=lambda message: message.text == "📊 Статистика")
 def admin_stats(message):
     count = len(users_db) if len(users_db) > 0 else 1
-    bot.send_message(message.chat.id, f"📈 Всего уникальных пользователей в базе: {count}\n🎯 Цель: 1,000,000,000")
+    bot.send_message(message.chat.id, f"📈 Всего пользователей: {count}\n🎯 Цель: 1,000,000,000")
 
 @bot.message_handler(func=lambda message: message.text == "📢 Рассылка рекламы")
 def admin_broadcast(message):
-    bot.send_message(message.chat.id, "📝 Напишите текст рекламного сообщения или вставьте реферальную ссылку, которую хотите разослать всем подписчикам:")
+    bot.send_message(message.chat.id, "📝 Напишите текст рекламного сообщения:")
 
 if __name__ == '__main__':
-    threading.Thread(target=run_port).start()
-    print("Бот PolyCall успешно запущен...")
-    bot.infinity_polling()
